@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Sky Racers - HD White Edition</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #ffffff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #ffffff;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* UI Overlay */
+    .ui-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 25px;
+    }
+
+    .hud-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .hud-card {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(8px);
+      border: 2px solid #e2e8f0;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+      padding: 12px 24px;
+      border-radius: 16px;
+      color: #1e293b;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: 0.5px;
+    }
+
+    .hud-card span {
+      color: #0284c7;
+      font-size: 22px;
+      margin-left: 6px;
+    }
+
+    /* Menu & Game Over Screen */
+    .screen-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      pointer-events: auto;
+      z-index: 10;
+      transition: opacity 0.3s ease;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    h1 {
+      font-size: 48px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #0284c7, #d946ef);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    p.subtitle {
+      color: #64748b;
+      font-size: 16px;
+      margin-bottom: 30px;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      border: none;
+      padding: 16px 42px;
+      font-size: 18px;
+      font-weight: 700;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 10px 20px rgba(2, 132, 199, 0.3);
+      transition: all 0.2s ease;
+      letter-spacing: 1px;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px) scale(1.03);
+      box-shadow: 0 14px 28px rgba(2, 132, 199, 0.4);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .controls-hint {
+      margin-top: 35px;
+      display: flex;
+      gap: 15px;
+    }
+
+    .key-badge {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      padding: 6px 14px;
+      border-radius: 8px;
+      color: #334155;
+      font-size: 13px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- HUD Overlay -->
+    <div class="ui-layer">
+      <div class="hud-top">
+        <div class="hud-card">SKOR: <span id="scoreVal">0</span></div>
+        <div class="hud-card">KECEPATAN: <span id="speedVal">100</span> KM/H</div>
+      </div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="startScreen" class="screen-overlay">
+      <h1>Neon Sky Racers</h1>
+      <p class="subtitle">Navigasikan Jet Neon di Langit Putih & Hindari Rintangan</p>
+      <button class="btn" onclick="startGame()">MULAIBALAPAN</button>
+      <div class="controls-hint">
+        <div class="key-badge">A / ◄ Kiri</div>
+        <div class="key-badge">D / ► Kanan</div>
+        <div class="key-badge">W / ▲ Boost</div>
+        <div class="key-badge">S / ▼ Rem</div>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="screen-overlay hidden">
+      <h1 style="background: linear-gradient(135deg, #ef4444, #f97316); -webkit-background-clip: text;">TABRAKAN!</h1>
+      <p class="subtitle" id="finalScore">Skor Akhir Anda: 0</p>
+      <button class="btn" onclick="startGame()">MAIN LAGI</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Resizing HD Canvas
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      ctx.scale(dpr, dpr);
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Game Variables
+    let isPlaying = false;
+    let score = 0;
+    let baseSpeed = 8;
+    let currentSpeed = baseSpeed;
+    let gameTime = 0;
+
+    // Controls
+    const keys = { left: false, right: false, up: false, down: false };
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = true;
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = false;
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = false;
+    });
+
+    // Player Jet Object
+    class Jet {
+      constructor() {
+        this.width = 40;
+        this.height = 60;
+        this.x = window.innerWidth / 2;
+        this.y = window.innerHeight - 120;
+        this.vx = 0;
+        this.tilt = 0;
+        this.particles = [];
+      }
+
+      update() {
+        // Horizontal Movement
+        if (keys.left) {
+          this.vx = -7;
+          this.tilt = -0.25;
+        } else if (keys.right) {
+          this.vx = 7;
+          this.tilt = 0.25;
+        } else {
+          this.vx *= 0.85;
+          this.tilt *= 0.85;
+        }
+
+        // Speed adjustment
+        if (keys.up) {
+          currentSpeed = baseSpeed * 1.5;
+        } else if (keys.down) {
+          currentSpeed = baseSpeed * 0.6;
+        } else {
+          currentSpeed = baseSpeed;
+        }
+
+        this.x += this.vx;
+
+        // Boundaries
+        const margin = 50;
+        if (this.x < margin) this.x = margin;
+        if (this.x > window.innerWidth - margin) this.x = window.innerWidth - margin;
+
+        // Particle Trail Effect
+        this.particles.push({
+          x: this.x + (Math.random() - 0.5) * 6,
+          y: this.y + 30,
+          size: Math.random() * 5 + 3,
+          alpha: 1,
+          color: keys.up ? '#0284c7' : '#d946ef'
+        });
+
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          const p = this.particles[i];
+          p.y += currentSpeed * 0.5;
+          p.alpha -= 0.04;
+          if (p.alpha <= 0) this.particles.splice(i, 1);
+        }
+      }
+
+      draw() {
+        // Draw Trail
+        this.particles.forEach(p => {
+          ctx.save();
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Draw Jet Fighter
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.tilt);
+
+        // Outer Glow
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#0284c7';
+
+        // Main Fuselage (Body)
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.moveTo(0, -30);
+        ctx.lineTo(12, 10);
+        ctx.lineTo(25, 20);
+        ctx.lineTo(8, 25);
+        ctx.lineTo(0, 20);
+        ctx.lineTo(-8, 25);
+        ctx.lineTo(-25, 20);
+        ctx.lineTo(-12, 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Neon Wings Edges
+        ctx.strokeStyle = '#0284c7';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, -30);
+        ctx.lineTo(25, 20);
+        ctx.moveTo(0, -30);
+        ctx.lineTo(-25, 20);
+        ctx.stroke();
+
+        // Cockpit
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.ellipse(0, -5, 4, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    // Obstacles
+    class Obstacle {
+      constructor() {
+        this.width = Math.random() * 80 + 40;
+        this.height = Math.random() * 20 + 20;
+        this.x = Math.random() * (window.innerWidth - 200) + 100;
+        this.y = -100;
+        this.color = Math.random() > 0.5 ? '#ef4444' : '#f97316';
+        this.vx = (Math.random() - 0.5) * 3;
+      }
+
+      update() {
+        this.y += currentSpeed;
+        this.x += this.vx;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // Neon Obstacle Design
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = this.color;
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 3;
+
+        ctx.beginPath();
+        ctx.roundRect(-this.width/2, -this.height/2, this.width, this.height, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner Energy Core
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.roundRect(-this.width/4, -this.height/4, this.width/2, this.height/2, 4);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    // Grid System (White High-Tech Background)
+    let gridOffset = 0;
+    function drawGrid() {
+      ctx.save();
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 1.5;
+
+      gridOffset = (gridOffset + currentSpeed) % 60;
+
+      // Vertical Perspective Grid
+      const totalColumns = 16;
+      for (let i = 0; i <= totalColumns; i++) {
+        const x = (window.innerWidth / totalColumns) * i;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, window.innerHeight);
+        ctx.stroke();
+      }
+
+      // Moving Horizontal Lines
+      for (let y = gridOffset; y < window.innerHeight; y += 60) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(window.innerWidth, y);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    let player = new Jet();
+    let obstacles = [];
+
+    function spawnObstacles() {
+      if (Math.random() < 0.035) {
+        obstacles.push(new Obstacle());
+      }
+    }
+
+    function checkCollision(player, obs) {
+      const px = player.x;
+      const py = player.y;
+      
+      const ox = obs.x - obs.width / 2;
+      const oy = obs.y - obs.height / 2;
+
+      return (
+        px > ox &&
+        px < ox + obs.width &&
+        py > oy &&
+        py < oy + obs.height
+      );
+    }
+
+    function gameOver() {
+      isPlaying = false;
+      document.getElementById('finalScore').innerText = `Skor Akhir Anda: ${Math.floor(score)}`;
+      document.getElementById('gameOverScreen').classList.remove('hidden');
+    }
+
+    function startGame() {
+      player = new Jet();
+      obstacles = [];
+      score = 0;
+      baseSpeed = 8;
+      isPlaying = true;
+
+      document.getElementById('startScreen').classList.add('hidden');
+      document.getElementById('gameOverScreen').classList.add('hidden');
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Main Game Loop
+    function gameLoop() {
+      if (!isPlaying) return;
+
+      // Clear Canvas (White)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+      // Draw Grid Background
+      drawGrid();
+
+      // Update & Draw Player
+      player.update();
+      player.draw();
+
+      // Manage Obstacles
+      spawnObstacles();
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.update();
+        obs.draw();
+
+        // Collision Check
+        if (checkCollision(player, obs)) {
+          gameOver();
+          return;
+        }
+
+        // Remove out-of-screen obstacles
+        if (obs.y > window.innerHeight + 100) {
+          obstacles.splice(i, 1);
+        }
+      }
+
+      // Update HUD
+      score += currentSpeed * 0.05;
+      baseSpeed += 0.001; // Gradual difficulty increase
+
+      document.getElementById('scoreVal').innerText = Math.floor(score);
+      document.getElementById('speedVal').innerText = Math.floor(currentSpeed * 15);
+
+      requestAnimationFrame(gameLoop);
+    }
+  </script>
+</body>
+</html>
