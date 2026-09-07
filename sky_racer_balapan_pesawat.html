@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sky Racer - Balapan Pesawat</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#fff;color:#111}
+  #game{position:relative;width:100%;height:100%;background:#fff;overflow:hidden;touch-action:none}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .hud{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:8px;z-index:3;pointer-events:none}
+  .pill{background:rgba(255,255,255,.92);border:2px solid #111;border-radius:14px;padding:7px 11px;font-weight:800;box-shadow:0 3px 0 #111;font-size:14px}
+  #start{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.94)}
+  .panel{text-align:center;max-width:420px;padding:28px}
+  h1{font-size:42px;margin:0 0 8px;letter-spacing:1px}
+  .sub{margin:0 0 18px;color:#444}
+  button{border:2px solid #111;background:#fff;border-radius:14px;padding:13px 24px;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 4px 0 #111}
+  button:active{transform:translateY(3px);box-shadow:0 1px 0 #111}
+  #gameOver{display:none;position:absolute;inset:0;z-index:6;align-items:center;justify-content:center;background:rgba(255,255,255,.9)}
+  .score{font-size:25px;font-weight:800;margin:12px}
+  .controls{position:absolute;bottom:18px;left:0;right:0;z-index:4;display:flex;justify-content:center;gap:18px;pointer-events:none}
+  .ctrl{width:72px;height:58px;border:2px solid #111;border-radius:18px;background:rgba(255,255,255,.9);box-shadow:0 4px 0 #111;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;pointer-events:auto;user-select:none}
+  .hint{font-size:13px;color:#555;margin-top:14px}
+  @media(min-width:800px){.controls{opacity:.55}.ctrl{width:62px;height:50px}}
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="canvas"></canvas>
+  <div class="hud">
+    <div class="pill">🏁 Skor: <span id="score">0</span></div>
+    <div class="pill">⚡ Kecepatan: <span id="speed">1</span>x</div>
+    <div class="pill">❤️ <span id="lives">3</span></div>
+  </div>
+
+  <div id="start">
+    <div class="panel">
+      <h1>✈️ SKY RACER</h1>
+      <p class="sub">Balapan pesawat dengan rintangan seru!</p>
+      <button id="startBtn">MULAI BALAPAN</button>
+      <div class="hint">Laptop: gunakan ← → atau A/D<br>HP: geser pesawat atau tekan tombol ◀ ▶</div>
+    </div>
+  </div>
+
+  <div id="gameOver">
+    <div class="panel">
+      <h1>💥 GAME OVER</h1>
+      <div class="score">Skor: <span id="finalScore">0</span></div>
+      <button id="restartBtn">MAIN LAGI</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="ctrl" id="left">◀</div>
+    <div class="ctrl" id="right">▶</div>
+  </div>
+</div>
+
+<script>
+const canvas=document.getElementById('canvas'), ctx=canvas.getContext('2d');
+const scoreEl=document.getElementById('score'), speedEl=document.getElementById('speed'), livesEl=document.getElementById('lives');
+let W,H,dpr,playing=false,last=0,score=0,lives=3,speed=1,spawnTimer=0,coinTimer=0,shake=0;
+let keys={left:false,right:false}, obstacles=[], coins=[], particles=[];
+const plane={x:0,y:0,w:42,h:58,vx:0,inv:0};
+
+function resize(){
+  dpr=Math.min(devicePixelRatio||1,2); W=innerWidth; H=innerHeight;
+  canvas.width=W*dpr; canvas.height=H*dpr; canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  plane.y=H-105; if(!plane.x) plane.x=W/2;
+}
+addEventListener('resize',resize); resize();
+
+function reset(){
+  score=0;lives=3;speed=1;spawnTimer=0;coinTimer=0;shake=0;
+  obstacles=[];coins=[];particles=[];plane.x=W/2;plane.y=H-105;plane.inv=0;playing=true;
+  document.getElementById('start').style.display='none'; document.getElementById('gameOver').style.display='none';
+  last=performance.now(); requestAnimationFrame(loop);
+}
+
+function rand(a,b){return Math.random()*(b-a)+a}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function hit(a,b){return Math.abs(a.x-b.x)<(a.w+b.w)*.43 && Math.abs(a.y-b.y)<(a.h+b.h)*.43}
+
+function spawnObstacle(){
+  const types=['rock','cloud','balloon','bird','gate'];
+  const type=types[Math.floor(Math.random()*types.length)];
+  let w=type==='gate'?rand(80,125):rand(38,65), h=type==='gate'?rand(55,85):rand(38,68);
+  obstacles.push({type,x:rand(w/2+8,W-w/2-8),y:-h,w,h,vy:rand(260,340)*speed,rot:rand(-.15,.15)});
+}
+function spawnCoin(){ coins.push({x:rand(22,W-22),y:-20,w:24,h:24,vy:290*speed,t:rand(0,6)}); }
+
+function particle(x,y,n=8){
+  for(let i=0;i<n;i++) particles.push({x,y,vx:rand(-90,90),vy:rand(20,150),life:rand(.3,.7),r:rand(2,5)});
+}
+
+function drawBackground(t){
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+  // runway-like dashed center and subtle side lines
+  ctx.strokeStyle='#e7e7e7';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(10,0);ctx.lineTo(10,H);ctx.moveTo(W-10,0);ctx.lineTo(W-10,H);ctx.stroke();
+  ctx.setLineDash([22,28]);ctx.strokeStyle='#eee';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(W/2,0);ctx.lineTo(W/2,H);ctx.stroke();ctx.setLineDash([]);
+  // moving small marks
+  for(let y=(t*90)%70-70;y<H;y+=70){ctx.fillStyle='#f0f0f0';ctx.fillRect(W*.18,y,8,18);ctx.fillRect(W*.82-8,y,8,18)}
+}
+
+function drawPlane(){
+  ctx.save();ctx.translate(plane.x,plane.y);
+  if(plane.inv>0 && Math.floor(plane.inv*12)%2===0){ctx.restore();return}
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,.1)';ctx.beginPath();ctx.ellipse(3,25,24,8,0,0,Math.PI*2);ctx.fill();
+  // wings
+  ctx.fillStyle='#111';ctx.beginPath();ctx.moveTo(-7,-2);ctx.lineTo(-34,22);ctx.lineTo(-7,17);ctx.lineTo(7,17);ctx.lineTo(34,22);ctx.lineTo(7,-2);ctx.closePath();ctx.fill();
+  // body
+  ctx.fillStyle='#fff';ctx.strokeStyle='#111';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(0,-30);ctx.quadraticCurveTo(12,-10,9,23);ctx.lineTo(0,31);ctx.lineTo(-9,23);ctx.quadraticCurveTo(-12,-10,0,-30);ctx.closePath();ctx.fill();ctx.stroke();
+  // cockpit
+  ctx.fillStyle='#111';ctx.beginPath();ctx.ellipse(0,-9,5,9,0,0,Math.PI*2);ctx.fill();
+  // tail
+  ctx.fillStyle='#111';ctx.beginPath();ctx.moveTo(-7,20);ctx.lineTo(0,13);ctx.lineTo(7,20);ctx.lineTo(5,28);ctx.lineTo(0,22);ctx.lineTo(-5,28);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+
+function drawObstacle(o){
+  ctx.save();ctx.translate(o.x,o.y);ctx.rotate(o.rot);
+  ctx.strokeStyle='#111';ctx.lineWidth=3;
+  if(o.type==='rock'){
+    ctx.fillStyle='#999';ctx.beginPath();ctx.moveTo(-o.w/2,o.h/2);ctx.lineTo(-o.w*.35,-o.h*.35);ctx.lineTo(0,-o.h/2);ctx.lineTo(o.w*.45,-o.h*.25);ctx.lineTo(o.w/2,o.h/2);ctx.closePath();ctx.fill();ctx.stroke();
+  }else if(o.type==='cloud'){
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-18,8,16,0,7);ctx.arc(0,-3,21,0,7);ctx.arc(20,8,15,0,7);ctx.closePath();ctx.fill();ctx.stroke();
+  }else if(o.type==='balloon'){
+    ctx.fillStyle='#ddd';ctx.beginPath();ctx.ellipse(0,-5,o.w*.42,o.h*.45,0,0,7);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-5,o.h*.32);ctx.lineTo(0,o.h/2);ctx.lineTo(5,o.h*.32);ctx.stroke();
+  }else if(o.type==='bird'){
+    ctx.beginPath();ctx.moveTo(-o.w/2,5);ctx.quadraticCurveTo(-8,-18,0,0);ctx.quadraticCurveTo(8,-18,o.w/2,5);ctx.stroke();
+  }else{
+    ctx.fillStyle='#fff';ctx.strokeRect(-o.w/2,-o.h/2,o.w,o.h);ctx.fillRect(-o.w/2,-o.h/2,o.w,o.h);
+    ctx.fillStyle='#111';ctx.fillRect(-o.w/2,-o.h/2,o.w,10);
+  }
+  ctx.restore();
+}
+function drawCoin(c,t){
+  ctx.save();ctx.translate(c.x,c.y);let s=.65+.35*Math.abs(Math.sin(t*5));ctx.scale(s,1);
+  ctx.fillStyle='#111';ctx.beginPath();ctx.arc(0,0,11,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(0,0,6,0,7);ctx.fill();ctx.restore();
+}
+
+function update(dt){
+  const accel=720;
+  if(keys.left) plane.vx-=accel*dt;
+  if(keys.right) plane.vx+=accel*dt;
+  plane.vx*=Math.pow(.0005,dt);
+  plane.x+=plane.vx*dt;
+  plane.x=clamp(plane.x,28,W-28);
+  if(plane.inv>0)plane.inv-=dt;
+
+  speed=Math.min(2.8,1+score/900);
+  spawnTimer-=dt;if(spawnTimer<=0){spawnObstacle();spawnTimer=Math.max(.34,rand(.65,1.05)/speed)}
+  coinTimer-=dt;if(coinTimer<=0){spawnCoin();coinTimer=rand(.65,1.3)}
+
+  obstacles.forEach(o=>o.y+=o.vy*dt);
+  coins.forEach(c=>{c.y+=c.vy*dt;c.t+=dt});
+  obstacles=obstacles.filter(o=>o.y<H+100);
+  coins=coins.filter(c=>c.y<H+50);
+
+  for(const o of obstacles){
+    if(plane.inv<=0 && hit({x:plane.x,y:plane.y,w:plane.w,h:plane.h},o)){
+      lives--; plane.inv=1.3; shake=.3; particle(plane.x,plane.y,18);
+      o.y=H+200; livesEl.textContent=lives;
+      if(lives<=0){endGame();return}
+    }
+  }
+  for(const c of coins){
+    if(hit({x:plane.x,y:plane.y,w:plane.w,h:plane.h},c)){
+      score+=35; particle(c.x,c.y,8); c.y=H+100;
+    }
+  }
+  score+=dt*10;
+  scoreEl.textContent=Math.floor(score);speedEl.textContent=speed.toFixed(1); 
+  particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt});
+  particles=particles.filter(p=>p.life>0);
+  if(shake>0)shake-=dt;
+}
+function draw(t){
+  drawBackground(t);
+  ctx.save();
+  if(shake>0)ctx.translate(rand(-5,5),rand(-5,5));
+  coins.forEach(c=>drawCoin(c,t));
+  obstacles.forEach(drawObstacle);
+  drawPlane();
+  particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle='#111';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();ctx.globalAlpha=1});
+  ctx.restore();
+}
+function loop(now){
+  if(!playing)return;
+  let dt=Math.min(.033,(now-last)/1000);last=now;
+  update(dt);draw(now/1000);
+  if(playing)requestAnimationFrame(loop);
+}
+function endGame(){
+  playing=false;
+  document.getElementById('finalScore').textContent=Math.floor(score);
+  document.getElementById('gameOver').style.display='flex';
+}
+document.getElementById('startBtn').onclick=reset;
+document.getElementById('restartBtn').onclick=reset;
+
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'||e.key.toLowerCase()==='a')keys.left=true;
+  if(e.key==='ArrowRight'||e.key.toLowerCase()==='d')keys.right=true;
+  if(e.code==='Space'&&!playing)reset();
+});
+addEventListener('keyup',e=>{
+  if(e.key==='ArrowLeft'||e.key.toLowerCase()==='a')keys.left=false;
+  if(e.key==='ArrowRight'||e.key.toLowerCase()==='d')keys.right=false;
+});
+function bind(id,key){
+  const el=document.getElementById(id);
+  const on=e=>{e.preventDefault();keys[key]=true};
+  const off=e=>{e.preventDefault();keys[key]=false};
+  el.addEventListener('pointerdown',on);el.addEventListener('pointerup',off);el.addEventListener('pointercancel',off);el.addEventListener('pointerleave',off);
+}
+bind('left','left');bind('right','right');
+
+let dragging=false;
+canvas.addEventListener('pointerdown',e=>{dragging=true;plane.x=e.clientX});
+canvas.addEventListener('pointermove',e=>{if(dragging)plane.x=clamp(e.clientX,28,W-28)});
+canvas.addEventListener('pointerup',()=>dragging=false);
+canvas.addEventListener('pointercancel',()=>dragging=false);
+
+draw(0);
+</script>
+</body>
+</html>
